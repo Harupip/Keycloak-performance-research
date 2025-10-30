@@ -1,0 +1,318 @@
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: keycloak-db
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      keycloak-networks:
+        aliases:
+          - postgres
+
+  # ========================================
+  # Keycloak Node 1
+  # ========================================
+  keycloak-1:
+    image: quay.io/keycloak/keycloak:26.4.0
+    container_name: keycloak-1
+    hostname: keycloak-1
+    command: start
+    environment:
+      # Database
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      
+
+      # Admin credentials (only needed on primary node)
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_USER}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_PASSWORD}
+      
+      # Proxy settings
+      KC_PROXY_HEADERS: xforwarded
+      KC_PROXY: edge
+      KC_HOSTNAME: ${KC_HOSTNAME}
+      KC_HOSTNAME_URL: http://${KC_HOSTNAME}
+      KC_HOSTNAME_STRICT: false
+      KC_HOSTNAME_STRICT_HTTPS: false
+      KC_HTTP_ENABLED: true
+      
+      # Health & Metrics
+      KC_HEALTH_ENABLED: true
+      KC_METRICS_ENABLED: true
+      
+      # Clustering - JDBC_PING
+      KC_CACHE: ispn
+      KC_CACHE_STACK: jdbc-ping
+      KC_SPI_CACHE_EMBEDDED_DEFAULT_SITE_NAME: site1
+      KC_SPI_CACHE_EMBEDDED_DEFAULT_NODE_NAME: keycloak-1
+      
+      # JVM Settings
+      JAVA_OPTS_KC_HEAP: "-Xms1024m -Xmx2048m"
+      JAVA_OPTS: >-
+        -Djgroups.thread_pool.min_threads=2
+        -Djgroups.thread_pool.max_threads=20
+    
+    ports:
+      - "8080:8080"
+      - "9990:9000"  # Metrics/Management
+    
+    expose:
+      - 7800  # JGroups
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    networks:
+      - keycloak-networks
+    
+  # ========================================
+  # Keycloak Node 2
+  # ========================================
+  keycloak-2:
+    image: quay.io/keycloak/keycloak:26.4.0
+    container_name: keycloak-2
+    hostname: keycloak-2
+    command: start
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      
+      KC_PROXY_HEADERS: xforwarded
+      KC_PROXY: edge
+      KC_HOSTNAME: ${KC_HOSTNAME}
+      KC_HOSTNAME_URL: http://${KC_HOSTNAME}
+      KC_HOSTNAME_STRICT: false
+      KC_HOSTNAME_STRICT_HTTPS: false
+      KC_HTTP_ENABLED: true
+      KC_HEALTH_ENABLED: true
+      KC_METRICS_ENABLED: true
+      
+      KC_CACHE: ispn
+      KC_CACHE_STACK: jdbc-ping
+      KC_SPI_CACHE_EMBEDDED_DEFAULT_SITE_NAME: site1
+      KC_SPI_CACHE_EMBEDDED_DEFAULT_NODE_NAME: keycloak-2
+      
+      JAVA_OPTS_KC_HEAP: "-Xms1024m -Xmx2048m"
+      JAVA_OPTS: >-
+        -Djgroups.thread_pool.min_threads=2
+        -Djgroups.thread_pool.max_threads=20
+    
+    ports:
+      - "8081:8080"
+      - "9991:9000"
+    
+    expose:
+      - 7800
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak-1:
+        condition: service_started
+    
+    networks:
+      - keycloak-networks
+    
+  # ========================================
+  # Keycloak Node 3
+  # ========================================
+  keycloak-3:
+    image: quay.io/keycloak/keycloak:26.4.0
+    container_name: keycloak-3
+    hostname: keycloak-3
+    command: start
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      
+      KC_PROXY_HEADERS: xforwarded
+      KC_PROXY: edge
+      KC_HOSTNAME: ${KC_HOSTNAME}
+      KC_HOSTNAME_URL: http://${KC_HOSTNAME}
+      KC_HOSTNAME_STRICT: false
+      KC_HOSTNAME_STRICT_HTTPS: false
+      KC_HTTP_ENABLED: true
+      KC_HEALTH_ENABLED: true
+      KC_METRICS_ENABLED: true
+      
+      KC_CACHE: ispn
+      KC_CACHE_STACK: jdbc-ping
+      KC_SPI_CACHE_EMBEDDED_DEFAULT_SITE_NAME: site1
+      KC_SPI_CACHE_EMBEDDED_DEFAULT_NODE_NAME: keycloak-3
+      
+      JAVA_OPTS_KC_HEAP: "-Xms1024m -Xmx2048m"
+      JAVA_OPTS: >-
+        -Djgroups.thread_pool.min_threads=2
+        -Djgroups.thread_pool.max_threads=20
+    
+    ports:
+      - "8082:8080"
+      - "9992:9000"
+    
+    expose:
+      - 7800
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak-1:
+        condition: service_started
+    
+    networks:
+      - keycloak-networks
+    
+  # ========================================
+  # HAProxy Load Balancer
+  # ========================================
+  haproxy:
+    image: haproxy:2.9-alpine
+    container_name: keycloak_haproxy
+    ports:
+      - "80:80"
+      - "8404:8404"
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      keycloak-1:
+        condition: service_started
+      keycloak-2:
+        condition: service_started
+      keycloak-3:
+        condition: service_started
+    networks:
+      - keycloak-networks
+    restart: unless-stopped
+
+  # ========================================
+  # Prometheus
+  # ========================================
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: keycloak_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    depends_on:
+      - keycloak-1
+      - keycloak-2
+      - keycloak-3
+      - haproxy
+    networks:
+      - keycloak-networks
+    restart: unless-stopped
+
+  # ========================================
+  # Grafana
+  # ========================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: keycloak_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - keycloak-networks
+    restart: unless-stopped
+
+  # ========================================
+  # Node Exporter (optional - enable with `--profile host-metrics` on Linux hosts)
+  # ========================================
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: keycloak_node_exporter
+    ports:
+      - "9100:9100"
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    profiles:
+      - host-metrics
+    networks:
+      - keycloak-networks
+    restart: unless-stopped
+
+  # ========================================
+  # HAProxy Exporter
+  # ========================================
+  haproxy-exporter:
+    image: quay.io/prometheus/haproxy-exporter:latest
+    container_name: keycloak_haproxy_exporter
+    ports:
+      - "9101:9101"
+    command:
+      - '--haproxy.scrape-uri=http://haproxy:8404/stats;csv'
+    depends_on:
+      - haproxy
+    networks:
+      - keycloak-networks
+    restart: unless-stopped
+
+  # ========================================
+  # Postgres Exporter
+  # ========================================
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: keycloak_postgres_exporter
+    ports:
+      - "9187:9187"
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+    depends_on:
+      - postgres
+    networks:
+      - keycloak-networks
+    restart: unless-stopped
+
+volumes:
+  dbdata:
+    name: keycloak_postgres_data
+  prometheus_data:
+    name: keycloak_prometheus_data
+  grafana_data:
+    name: keycloak_grafana_data
+
+networks:
+  keycloak-networks:
+    driver: bridge
+    name: keycloak_network

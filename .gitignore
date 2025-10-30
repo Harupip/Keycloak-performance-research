@@ -1,0 +1,26 @@
+# Node / Vue dependencies & build output
+node_modules/
+dist/
+temp/
+*.log
+
+# Environment & local overrides
+.env
+*.env.local
+
+# Tooling & editor junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Docker / Prometheus persistent data
+dbdata/
+prometheus_data/
+grafana_data/
+
+# Test artifacts
+results.json
+*.k6.json
+*.k6.log
+perf/results/
