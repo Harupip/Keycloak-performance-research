@@ -25,7 +25,8 @@ function Write-Step {
 function Invoke-FormPost {
     Param(
         [string]$Uri,
-        [hashtable]$Body
+        [hashtable]$Body,
+        [hashtable]$Headers
     )
     $encoded = $Body.GetEnumerator() | ForEach-Object {
         '{0}={1}' -f [System.Uri]::EscapeDataString($_.Key), [System.Uri]::EscapeDataString([string]$_.Value)
@@ -34,7 +35,16 @@ function Invoke-FormPost {
     if ($Verbose) {
         Write-Verbose "POST $Uri`n$payload"
     }
-    return Invoke-RestMethod -Uri $Uri -Method Post -Body $payload -ContentType 'application/x-www-form-urlencoded'
+    $invokeParams = @{
+        Uri         = $Uri
+        Method      = 'Post'
+        Body        = $payload
+        ContentType = 'application/x-www-form-urlencoded'
+    }
+    if ($Headers) {
+        $invokeParams.Headers = $Headers
+    }
+    return Invoke-RestMethod @invokeParams
 }
 
 function Invoke-Userinfo {
@@ -60,18 +70,31 @@ function Invoke-Userinfo {
 
 Write-Step "Authenticating against $DirectNodeUrl (target node: $TargetNode)..."
 
+$baseUri = [System.Uri]$BaseUrl
+$forwardedHeaders = @{
+    'X-Forwarded-Host'  = $baseUri.Host
+    'X-Forwarded-Proto' = $baseUri.Scheme
+}
+if ($baseUri.IsDefaultPort) {
+    $forwardedHeaders['X-Forwarded-Port'] = if ($baseUri.Scheme -eq 'https') { '443' } else { '80' }
+}
+else {
+    $forwardedHeaders['X-Forwarded-Port'] = [string]$baseUri.Port
+}
+
 $loginBody = @{
     grant_type = 'password'
     client_id  = $ClientId
     username   = $Username
     password   = $Password
+    scope      = 'openid profile email'
 }
 if ($ClientSecret) {
     $loginBody.client_secret = $ClientSecret
 }
 
 $tokenEndpoint = "$DirectNodeUrl/realms/$Realm/protocol/openid-connect/token"
-$loginResponse = Invoke-FormPost -Uri $tokenEndpoint -Body $loginBody
+$loginResponse = Invoke-FormPost -Uri $tokenEndpoint -Body $loginBody -Headers $forwardedHeaders
 
 Write-Step "Initial login succeeded. Waiting $PreKillDelaySeconds seconds before killing $TargetNode..."
 Start-Sleep -Seconds $PreKillDelaySeconds

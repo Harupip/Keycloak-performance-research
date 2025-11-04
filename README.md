@@ -69,7 +69,12 @@ Mẹo: khi demo trực tiếp, bạn có thể trì hoãn bước 3, giữ lưu 
    # 100 request mỗi 30 giây trong 10 phút
    .\scripts\run-k6.ps1 -BaseUrl http://localhost -RequestRate 100 -TimeUnit 30s -Duration 10m
    ```
-   Đổi `-Script keycloak-login-refresh` nếu bạn muốn kiểm tra luồng đăng nhập + refresh token.
+   Đổi `-Script keycloak-login-refresh` nếu muốn kiểm tra luồng đăng nhập + refresh token.
+   Ramp script moi `keycloak-login-ramp` giup ramp luu luong GET OpenID Discovery (khong can dang nhap):
+   ```powershell
+   .\scripts\run-k6.ps1 -Script keycloak-login-ramp -TimeUnit 1m -K6Args @('--tag','profile:ramp')
+   ```
+   Co the thay doi bien moi truong `RAMP_STAGES`, vi du: `RAMP_STAGES="1m:20,2m:60,2m:100,1m:0"`. `RAMP_START_RATE` va `RAMP_GRACEFUL_STOP` ho tro dieu chinh toc do bat dau va thoi gian dung nhe.
 3. Khi cần tuỳ biến sâu, truyền thêm `-K6Args '--out json=results.json'` hoặc chỉnh `-PreAllocatedVUs`, `-MaxVUs`.
 4. Trực tiếp (không dùng helper):
    ```bash
