@@ -35,6 +35,7 @@ function Set-EnvIfProvided {
 $scriptMap = @{
     'keycloak-openid'        = Join-Path $PSScriptRoot '..\perf\k6\keycloak-openid.js'
     'keycloak-login-refresh' = Join-Path $PSScriptRoot '..\perf\k6\keycloak-login-refresh.js'
+    'keycloak-login-ramp'    = Join-Path $PSScriptRoot '..\perf\k6\keycloak-login-ramp.js'
 }
 
 if (-not $scriptMap.ContainsKey($Script)) {
