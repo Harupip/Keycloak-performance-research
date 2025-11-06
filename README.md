@@ -1,11 +1,10 @@
-# Demo mở rộng Keycloak theo chiều ngang
+# Demo mở rộng Keycloak theo chiều ngang và xem cách hoạt động khi 1 node / nhiều node gặp sự cố
 
 Dự án này khởi chạy một cụm Keycloak nhỏ phía sau HAProxy, đồng thời Prometheus thu thập số liệu thời gian thực để bạn quan sát khả năng chịu tải và tính ổn định khi lưu lượng tăng lên.
 
-## Yêu cầu trước khi bắt đầu
+## Yêu cầu
 
 - Docker + Docker Compose v2
-- Tùy chọn: công cụ tạo tải như [hey](https://github.com/rakyll/hey) hoặc [k6](https://k6.io)
 
 ## Khởi động Postgres, Keycloak và HAProxy
 
@@ -82,13 +81,13 @@ Mẹo: khi demo trực tiếp, bạn có thể trì hoãn bước 3, giữ lưu 
    ```
    Script `keycloak-openid` ramp VU lên 30, gọi OpenID Discovery và ghi nhận latency theo từng upstream.
 
-## Kiểm tra tính bền bỉ của session
+## Kiểm tra khả năng SSO khi đúng node đăng nhập bị dừng
 
 - Dùng `scripts\failover-login.ps1` để mô phỏng: đăng nhập vào một node cụ thể, kill node đó, sau đó refresh token qua HAProxy:
   ```powershell
   .\scripts\failover-login.ps1 -DirectNodeUrl http://localhost:8081 -TargetNode keycloak-2 -AutoRestart
   ```
-  Nếu refresh thành công và userinfo trả về 200, session vẫn sống dù node gốc bị hạ. Điều này chứng minh cluster đồng bộ state (cache phân tán + token store) đúng cách.
+
 - Kết hợp với k6: chạy `run-k6.ps1` song song rồi dùng script failover, xem các VU có tiếp tục refresh/token hay không.
 
 ## Mô phỏng node hỏng thủ công
@@ -98,7 +97,7 @@ Mẹo: khi demo trực tiếp, bạn có thể trì hoãn bước 3, giữ lưu 
    ```bash
    docker compose ps keycloak-1 keycloak-2 keycloak-3
    ```
-3. Dừng một replica, ví dụ:
+3. Dừng một replica (có thể tắt ở docker), ví dụ:
    ```bash
    docker compose kill keycloak-2
    ```
@@ -108,18 +107,10 @@ Mẹo: khi demo trực tiếp, bạn có thể trì hoãn bước 3, giữ lưu 
    docker compose up -d keycloak-2
    ```
 
-## Khắc phục sự cố thường gặp
-
-- **Liquibase báo lỗi duplicate key / changelog**: xuất hiện khi nhiều container áp dụng migration cùng lúc. Luôn khởi động `keycloak-1` một mình, đợi `healthy` rồi mới bật replica. Nếu DB đang dở dang, xoá volume:
-  ```bash
-  docker compose down -v
-  docker volume rm keycloak_postgres_data
-  docker compose up -d
-  ```
-
 ## Kết thúc phiên thử nghiệm
 
 Tắt toàn bộ stack và xoá volume:
 ```bash
 docker compose down -v
 ```
+
